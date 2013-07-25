@@ -938,9 +938,10 @@ ssize_t acpuclk_get_vdd_levels_str(char *buf) {
 		mutex_lock(&driver_lock);
 
 		for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
-			/* updated to use uv required by 8x60 architecture - faux123 */
-			len += sprintf(buf + len, "%8lu: %8d\n", drv.acpu_freq_tbl[i].speed.khz,
-				drv.acpu_freq_tbl[i].vdd_core );
+			if (drv.acpu_freq_tbl[i].use_for_scaling) {
+				/* updated to use uv required by 8x60 architecture - faux123 */
+				len += sprintf(buf + len, "%8lu: %8d\n", drv.acpu_freq_tbl[i].speed.khz, drv.acpu_freq_tbl[i].vdd_core );
+			}
 		}
 
 		mutex_unlock(&driver_lock);
