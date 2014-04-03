@@ -612,3 +612,5 @@ config KEYBOARD_W90P910
 	  module will be called w90p910_keypad.
 
 endif
+
+
