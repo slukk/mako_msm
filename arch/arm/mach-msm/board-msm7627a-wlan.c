@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -336,6 +336,10 @@ static unsigned int msm_AR600X_shutdown_power(bool on)
 				goto set_gpio_fail;
 			}
 			gpio_free(gpio_wlan_sys_rest_en);
+		} else {
+			pr_err("%s: WLAN sys_rest_en GPIO %d request failed %d\n",
+				__func__, gpio_wlan_sys_rest_en, rc);
+			goto out;
 		}
 	}
 
@@ -373,6 +377,7 @@ qrd_gpio_fail:
 		gpio_free(GPIO_WLAN_3V3_EN);
 reg_disable:
 	wlan_switch_regulators(0);
+out:
 	pr_info("WLAN power-down failed\n");
 	return rc;
 }

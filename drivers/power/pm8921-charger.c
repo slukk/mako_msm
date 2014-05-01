@@ -85,8 +85,6 @@
 #define EOC_CHECK_PERIOD_MS	10000
 /* check for USB unplug every 200 msecs */
 #define UNPLUG_CHECK_WAIT_PERIOD_MS 200
-/* wait for 1s to complete the chg gone handling */
-#define CHG_GONE_WAIT_TIMEOUT 1000
 
 enum chg_fsm_state {
 	FSM_STATE_OFF_0 = 0,
@@ -279,17 +277,17 @@ struct pm8921_chg_chip {
 	struct delayed_work		unplug_usbcheck_work;
 	struct delayed_work		vin_collapse_check_work;
 	struct wake_lock		eoc_wake_lock;
-	struct wake_lock		chg_gone_wake_lock;
 	enum pm8921_chg_cold_thr	cold_thr;
 	enum pm8921_chg_hot_thr		hot_thr;
 	int				rconn_mohm;
 	enum pm8921_chg_led_src_config	led_src_config;
 	bool				host_mode;
+	bool				has_dc_supply;
 	u8				active_path;
-	int				ext_batt_health;
-	int				ext_batt_temp_monitor;
 	int				recent_reported_soc;
 	unsigned int			ext_warm_i_limit;
+	int				ext_batt_health;
+	int				ext_batt_temp_monitor;
 	int				eoc_check_soc;
 };
 
@@ -1204,6 +1202,9 @@ static enum power_supply_property pm_power_props_mains[] = {
 
 static char *pm_power_supplied_to[] = {
 	"battery",
+#ifdef CONFIG_TOUCHSCREEN_CHARGER_NOTIFY
+	"touch",
+#endif
 };
 
 #define USB_WALL_THRESHOLD_MA	500
@@ -1219,6 +1220,12 @@ static int pm_power_get_property_mains(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = 0;
+
+		if (the_chip->has_dc_supply) {
+			val->intval = 1;
+			return 0;
+		}
+
 		if (charging_disabled)
 			return 0;
 
@@ -1705,7 +1712,7 @@ static void __pm8921_charger_vbus_draw(unsigned int mA)
 		}
 
 		/* Check if IUSB_FINE_RES is available */
-		if ((usb_ma_table[i].value & PM8917_IUSB_FINE_RES)
+		while ((usb_ma_table[i].value & PM8917_IUSB_FINE_RES)
 				&& !the_chip->iusb_fine_res)
 			i--;
 		if (i < 0)
@@ -1740,8 +1747,10 @@ void pm8921_charger_vbus_draw(unsigned int mA)
 	 */
 	if (!get_prop_batt_present(the_chip)
 		&& !is_dc_chg_plugged_in(the_chip)) {
-		pr_err("rejected: no other power source connected\n");
-		return;
+		if (!the_chip->has_dc_supply) {
+			pr_err("rejected: no other power source connected\n");
+			return;
+		}
 	}
 
 	if (usb_max_current && mA > usb_max_current) {
@@ -1787,6 +1796,20 @@ int pm8921_charger_enable(bool enable)
 	return rc;
 }
 EXPORT_SYMBOL(pm8921_charger_enable);
+
+int pm8921_is_chg_auto_enable(void)
+{
+	u8 temp = 0;
+
+	if (!the_chip) {
+		pr_err("called before init\n");
+		return -EINVAL;
+	}
+
+	pm8xxx_readb(the_chip->dev->parent, CHG_CNTRL_3, &temp);
+	return  temp & CHG_EN_BIT;
+}
+EXPORT_SYMBOL(pm8921_is_chg_auto_enable);
 
 int pm8921_force_start_charging(void)
 {
@@ -1908,6 +1931,9 @@ int pm8921_disable_source_current(bool disable)
 	}
 	if (disable)
 		pr_warn("current drawn from chg=0, battery provides current\n");
+
+	pm_chg_usb_suspend_enable(the_chip, disable);
+
 	return pm_chg_charge_dis(the_chip, disable);
 }
 EXPORT_SYMBOL(pm8921_disable_source_current);
@@ -2977,9 +3003,6 @@ static irqreturn_t chg_gone_irq_handler(int irq, void *data)
 	struct pm8921_chg_chip *chip = data;
 	int chg_gone, usb_chg_plugged_in;
 
-	wake_lock_timeout(&chip->chg_gone_wake_lock,
-			msecs_to_jiffies(CHG_GONE_WAIT_TIMEOUT));
-
 	usb_chg_plugged_in = is_usb_chg_plugged_in(chip);
 	chg_gone = pm_chg_get_rt_status(chip, CHG_GONE_IRQ);
 
@@ -3633,6 +3656,7 @@ static void __devinit determine_initial_state(struct pm8921_chg_chip *chip)
 {
 	unsigned long flags;
 	int fsm_state;
+	int is_fast_chg;
 
 	chip->dc_present = !!is_dc_chg_plugged_in(chip);
 	chip->usb_present = !!is_usb_chg_plugged_in(chip);
@@ -3662,9 +3686,17 @@ static void __devinit determine_initial_state(struct pm8921_chg_chip *chip)
 	if (usb_chg_current) {
 		/* reissue a vbus draw call */
 		__pm8921_charger_vbus_draw(usb_chg_current);
-		fastchg_irq_handler(chip->pmic_chg_irq[FASTCHG_IRQ], chip);
 	}
 	spin_unlock_irqrestore(&vbus_lock, flags);
+	/*
+	 * The bootloader could have started charging, a fastchg interrupt
+	 * might not happen. Check the real time status and if it is fast
+	 * charging invoke the handler so that the eoc worker could be
+	 * started
+	 */
+	is_fast_chg = pm_chg_get_rt_status(chip, FASTCHG_IRQ);
+	if (is_fast_chg)
+		fastchg_irq_handler(chip->pmic_chg_irq[FASTCHG_IRQ], chip);
 
 	fsm_state = pm_chg_get_fsm_state(chip);
 	if (is_battery_charging(fsm_state)) {
@@ -3881,16 +3913,16 @@ static void detect_battery_removal(struct pm8921_chg_chip *chip)
 
 #define ENUM_TIMER_STOP_BIT	BIT(1)
 #define BOOT_DONE_BIT		BIT(6)
-#define BOOT_TIMER_EN_BIT	BIT(1)
-#define BOOT_DONE_MASK		(BOOT_DONE_BIT | BOOT_TIMER_EN_BIT)
 #define CHG_BATFET_ON_BIT	BIT(3)
 #define CHG_VCP_EN		BIT(0)
 #define CHG_BAT_TEMP_DIS_BIT	BIT(2)
 #define SAFE_CURRENT_MA		1500
+#define PM_SUB_REV		0x001
 static int __devinit pm8921_chg_hw_init(struct pm8921_chg_chip *chip)
 {
 	int rc;
 	int vdd_safe;
+	u8 subrev;
 
 	/* forcing 19p2mhz before accessing any charger registers */
 	pm8921_chg_force_19p2mhz_clk(chip);
@@ -3898,7 +3930,7 @@ static int __devinit pm8921_chg_hw_init(struct pm8921_chg_chip *chip)
 	detect_battery_removal(chip);
 
 	rc = pm_chg_masked_write(chip, SYS_CONFIG_2,
-					BOOT_DONE_MASK, BOOT_DONE_MASK);
+					BOOT_DONE_BIT, BOOT_DONE_BIT);
 	if (rc) {
 		pr_err("Failed to set BOOT_DONE_BIT rc=%d\n", rc);
 		return rc;
@@ -4078,8 +4110,21 @@ static int __devinit pm8921_chg_hw_init(struct pm8921_chg_chip *chip)
 	}
 
 	/* Workarounds for die 3.0 */
-	if (pm8xxx_get_revision(chip->dev->parent) == PM8XXX_REVISION_8921_3p0)
-		pm8xxx_writeb(chip->dev->parent, CHG_BUCK_CTRL_TEST3, 0xAC);
+	if (pm8xxx_get_revision(chip->dev->parent) == PM8XXX_REVISION_8921_3p0) {
+		rc = pm8xxx_readb(chip->dev->parent, PM_SUB_REV, &subrev);
+		if (rc) {
+			pr_err("read failed: addr=%03X, rc=%d\n",
+				PM_SUB_REV, rc);
+			return rc;
+		}
+		/* Check if die 3.0.1 is present */
+		if (subrev & 0x1)
+			pm8xxx_writeb(chip->dev->parent,
+				CHG_BUCK_CTRL_TEST3, 0xA4);
+		else
+			pm8xxx_writeb(chip->dev->parent,
+				CHG_BUCK_CTRL_TEST3, 0xAC);
+	}
 
 	/* Enable isub_fine resolution AICL for PM8917 */
 	if (pm8xxx_get_version(chip->dev->parent) == PM8XXX_VERSION_8917) {
@@ -4517,6 +4562,7 @@ static int __devinit pm8921_charger_probe(struct platform_device *pdev)
 	chip->hot_thr = pdata->hot_thr;
 	chip->rconn_mohm = pdata->rconn_mohm;
 	chip->led_src_config = pdata->led_src_config;
+        chip->has_dc_supply = pdata->has_dc_supply;
 	chip->ext_batt_temp_monitor = pdata->ext_batt_temp_monitor;
 	chip->eoc_check_soc = pdata->eoc_check_soc;
 	if (chip->ext_batt_temp_monitor)
@@ -4573,9 +4619,6 @@ static int __devinit pm8921_charger_probe(struct platform_device *pdev)
 	the_chip = chip;
 
 	wake_lock_init(&chip->eoc_wake_lock, WAKE_LOCK_SUSPEND, "pm8921_eoc");
-	wake_lock_init(&chip->chg_gone_wake_lock,
-			WAKE_LOCK_SUSPEND, "pm8921_chg_gone");
-
 	INIT_DELAYED_WORK(&chip->eoc_work, eoc_worker);
 	INIT_DELAYED_WORK(&chip->vin_collapse_check_work,
 						vin_collapse_check_worker);
@@ -4658,7 +4701,6 @@ static int __devexit pm8921_charger_remove(struct platform_device *pdev)
 {
 	struct pm8921_chg_chip *chip = platform_get_drvdata(pdev);
 
-	wake_lock_destroy(&chip->chg_gone_wake_lock);
 	device_remove_file(&pdev->dev, &dev_attr_charge);
 	free_irqs(chip);
 	platform_set_drvdata(pdev, NULL);

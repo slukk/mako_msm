@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,9 +51,11 @@
 #define RMB_PBL_STATUS			0x04
 #define RMB_MBA_STATUS			0x0C
 
-#define PBL_MBA_WAIT_TIMEOUT_US		100000
 #define PROXY_TIMEOUT_MS		10000
 #define POLL_INTERVAL_US		50
+
+static int pbl_mba_boot_timeout_ms = 100;
+module_param(pbl_mba_boot_timeout_ms, int, S_IRUGO | S_IWUSR);
 
 static int pil_mss_power_up(struct device *dev)
 {
@@ -77,6 +79,7 @@ static int pil_mss_power_down(struct device *dev)
 static int pil_mss_enable_clks(struct q6v5_data *drv)
 {
 	int ret;
+	void __iomem *mpll1_config_ctl;
 
 	ret = clk_prepare_enable(drv->ahb_clk);
 	if (ret)
@@ -96,6 +99,12 @@ static int pil_mss_enable_clks(struct q6v5_data *drv)
 	ret = clk_prepare_enable(drv->rom_clk);
 	if (ret)
 		goto err_rom_clk;
+
+	/* TODO: Remove when support for 8974v1.0 HW is dropped. */
+	mpll1_config_ctl = ioremap(0xFC981034, 0x4);
+	writel_relaxed(0x0300403D, mpll1_config_ctl);
+	mb();
+	iounmap(mpll1_config_ctl);
 
 	return 0;
 
@@ -131,7 +140,7 @@ static int wait_for_mba_ready(struct device *dev)
 
 	/* Wait for PBL completion. */
 	ret = readl_poll_timeout(drv->rmb_base + RMB_PBL_STATUS, status,
-		status != 0, POLL_INTERVAL_US, PBL_MBA_WAIT_TIMEOUT_US);
+		status != 0, POLL_INTERVAL_US, pbl_mba_boot_timeout_ms * 1000);
 	if (ret) {
 		dev_err(dev, "PBL boot timed out\n");
 		return ret;
@@ -143,7 +152,7 @@ static int wait_for_mba_ready(struct device *dev)
 
 	/* Wait for MBA completion. */
 	ret = readl_poll_timeout(drv->rmb_base + RMB_MBA_STATUS, status,
-		status != 0, POLL_INTERVAL_US, PBL_MBA_WAIT_TIMEOUT_US);
+		status != 0, POLL_INTERVAL_US, pbl_mba_boot_timeout_ms * 1000);
 	if (ret) {
 		dev_err(dev, "MBA boot timed out\n");
 		return ret;

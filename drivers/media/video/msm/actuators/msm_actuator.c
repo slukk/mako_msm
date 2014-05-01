@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -260,6 +260,7 @@ static int32_t msm_actuator_move_focus(
 	int16_t dest_step_pos = move_params->dest_step_pos;
 	uint16_t curr_lens_pos = 0;
 	int dir = move_params->dir;
+	struct damping_params_t damping_param;
 #ifdef CONFIG_MSM_CAMERA_DEBUG
 	int32_t num_steps = move_params->num_steps;
 #endif
@@ -269,6 +270,12 @@ static int32_t msm_actuator_move_focus(
 			__func__,a_ctrl->curr_region_index);
 #endif
 	CDBG("%s called, dir %d, num_steps %d\n",__func__,dir,num_steps);
+
+	if (!a_ctrl->step_position_table) {
+		pr_err("%s: Not yet configured (step_position_table is NULL)\n",
+				__func__);
+		return -EINVAL;
+	}
 
 	if (dest_step_pos == a_ctrl->curr_step_pos)
 		return rc;
@@ -282,6 +289,16 @@ static int32_t msm_actuator_move_focus(
 		step_boundary =
 			a_ctrl->region_params[a_ctrl->curr_region_index].
 			step_bound[dir];
+
+		if (copy_from_user(&damping_param,
+				   &(move_params->
+					   ringing_params[a_ctrl->
+					   curr_region_index]),
+				   sizeof(struct damping_params_t))) {
+			pr_err("%s: copy_from_user\n", __func__);
+			return -EFAULT;
+		}
+
 		if ((dest_step_pos * sign_dir) <=
 			(step_boundary * sign_dir)) {
 
@@ -294,9 +311,7 @@ static int32_t msm_actuator_move_focus(
 				actuator_write_focus(
 					a_ctrl,
 					curr_lens_pos,
-					&(move_params->
-						ringing_params[a_ctrl->
-						curr_region_index]),
+					&damping_param,
 					sign_dir,
 					target_lens_pos);
 			if (rc < 0) {
@@ -321,9 +336,7 @@ static int32_t msm_actuator_move_focus(
 				actuator_write_focus(
 					a_ctrl,
 					curr_lens_pos,
-					&(move_params->
-						ringing_params[a_ctrl->
-						curr_region_index]),
+					&damping_param,
 					sign_dir,
 					target_lens_pos);
 			if (rc < 0) {
@@ -373,12 +386,13 @@ static int32_t msm_actuator_init_default_step_table(struct msm_actuator_ctrl_t *
 	uint16_t step_boundary = 0;
 	uint32_t max_code_size = 1;
 	uint16_t data_size = set_info->actuator_params.data_size;
+
 	CDBG("%s called\n", __func__);
 
 	for (; data_size > 0; data_size--)
 		max_code_size *= 2;
 
-	if(a_ctrl->step_position_table){
+	if (a_ctrl->step_position_table) {
 		kfree(a_ctrl->step_position_table);
 		a_ctrl->step_position_table = NULL;
 	}
@@ -435,15 +449,22 @@ int32_t msm_actuator_init_step_table_use_eeprom(struct msm_actuator_ctrl_t *a_ct
 	uint16_t data_size = set_info->actuator_params.data_size;
 	uint16_t act_start = 0, act_macro = 0, move_range = 0;
 
+	CDBG("%s called\n", __func__);
+
+	if (set_info->af_tuning_params.total_steps < 1) {
+		pr_err("%s: total_steps is too small (%d)\n", __func__,
+				set_info->af_tuning_params.total_steps);
+		return -EINVAL;
+	}
+
 	for (; data_size > 0; data_size--)
 		max_code_size *= 2;
 
-	if(a_ctrl->step_position_table){
+	if (a_ctrl->step_position_table) {
 		kfree(a_ctrl->step_position_table);
 		a_ctrl->step_position_table = NULL;
 	}
 
-	CDBG("%s called\n", __func__);
 	// set act_start, act_macro
 	act_start = (uint16_t)(imx111_afcalib_data[1] << 8) |
 			imx111_afcalib_data[0];
@@ -530,6 +551,12 @@ static int32_t msm_actuator_init_step_table(struct msm_actuator_ctrl_t *a_ctrl,
 
 	CDBG("%s called\n", __func__);
 
+	if (set_info->af_tuning_params.total_steps < 1) {
+		pr_err("%s: total_steps is too small (%d)\n", __func__,
+				set_info->af_tuning_params.total_steps);
+		return -EINVAL;
+	}
+
 	// read from eeprom
 	buf = ACTUATOR_START_ADDR;
 	rc = msm_actuator_i2c_read_b_eeprom(&a_ctrl->i2c_client,
@@ -572,7 +599,7 @@ static int32_t msm_actuator_init_step_table(struct msm_actuator_ctrl_t *a_ctrl,
 	for (; data_size > 0; data_size--)
 		max_code_size *= 2;
 
-	if(a_ctrl->step_position_table){
+	if (a_ctrl->step_position_table) {
 		kfree(a_ctrl->step_position_table);
 		a_ctrl->step_position_table = NULL;
 	}
@@ -821,6 +848,7 @@ static int32_t msm_actuator_i2c_probe(
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("i2c_check_functionality failed\n");
+		rc = -ENODEV;
 		goto probe_failure;
 	}
 
@@ -839,10 +867,7 @@ static int32_t msm_actuator_i2c_probe(
 		act_ctrl_t->act_v4l2_subdev_ops);
 
 	CDBG("%s succeeded\n", __func__);
-	return rc;
-
 probe_failure:
-	pr_err("%s failed! rc = %d\n", __func__, rc);
 	return rc;
 }
 
@@ -929,7 +954,6 @@ static struct v4l2_subdev_ops msm_actuator_subdev_ops = {
 static struct msm_actuator_ctrl_t msm_actuator_t = {
 	.i2c_driver = &msm_actuator_i2c_driver,
 	.act_v4l2_subdev_ops = &msm_actuator_subdev_ops,
-
 	.curr_step_pos = 0,
 	.curr_region_index = 0,
 	.actuator_mutex = &msm_actuator_mutex,

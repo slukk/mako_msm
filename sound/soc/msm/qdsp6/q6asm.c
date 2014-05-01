@@ -1,6 +1,5 @@
-
 /*
- * Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -529,7 +528,7 @@ int q6asm_audio_client_buf_alloc(unsigned int dir,
 					}
 					buf[cnt].handle = ion_alloc
 						(buf[cnt].client, bufsz, SZ_4K,
-						(0x1 << ION_AUDIO_HEAP_ID));
+						(0x1 << ION_AUDIO_HEAP_ID), 0);
 					if (IS_ERR_OR_NULL((void *)
 						buf[cnt].handle)) {
 						pr_err("%s: ION memory allocation for AUDIO failed\n",
@@ -551,8 +550,7 @@ int q6asm_audio_client_buf_alloc(unsigned int dir,
 					}
 
 					buf[cnt].data = ion_map_kernel
-					(buf[cnt].client, buf[cnt].handle,
-							 0);
+					(buf[cnt].client, buf[cnt].handle);
 					if (IS_ERR_OR_NULL((void *)
 						buf[cnt].data)) {
 						pr_err("%s: ION memory mapping for AUDIO failed\n",
@@ -665,7 +663,7 @@ int q6asm_audio_client_buf_alloc_contiguous(unsigned int dir,
 		goto fail;
 	}
 	buf[0].handle = ion_alloc(buf[0].client, bufsz * bufcnt, SZ_4K,
-				  (0x1 << ION_AUDIO_HEAP_ID));
+				  (0x1 << ION_AUDIO_HEAP_ID), 0);
 	if (IS_ERR_OR_NULL((void *) buf[0].handle)) {
 		pr_err("%s: ION memory allocation for AUDIO failed\n",
 			__func__);
@@ -682,7 +680,7 @@ int q6asm_audio_client_buf_alloc_contiguous(unsigned int dir,
 		goto fail;
 	}
 
-	buf[0].data = ion_map_kernel(buf[0].client, buf[0].handle, 0);
+	buf[0].data = ion_map_kernel(buf[0].client, buf[0].handle);
 	if (IS_ERR_OR_NULL((void *) buf[0].data)) {
 		pr_err("%s: ION memory mapping for AUDIO failed\n", __func__);
 		mutex_unlock(&ac->cmd_lock);
@@ -799,6 +797,25 @@ static int32_t q6asm_mmapcallback(struct apr_client_data *data, void *priv)
 	return 0;
 }
 
+static int32_t is_no_wait_cmd_rsp(uint32_t opcode, uint32_t *cmd_type)
+{
+	if (opcode == APR_BASIC_RSP_RESULT) {
+		if (cmd_type != NULL) {
+			switch (cmd_type[0]) {
+			case ASM_SESSION_CMD_RUN:
+			case ASM_SESSION_CMD_PAUSE:
+			case ASM_DATA_CMD_EOS:
+				return 1;
+			default:
+				break;
+			}
+		} else
+			pr_err("%s: null pointer!", __func__);
+	} else if (opcode == ASM_DATA_CMDRSP_EOS)
+		return 1;
+
+	return 0;
+}
 
 static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 {
@@ -819,14 +836,16 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 			ac->session);
 		return -EINVAL;
 	}
-	if (atomic_read(&ac->nowait_cmd_cnt) > 0) {
+
+	payload = data->payload;
+	if ((atomic_read(&ac->nowait_cmd_cnt) > 0) &&
+		is_no_wait_cmd_rsp(data->opcode, payload)) {
 		pr_debug("%s: nowait_cmd_cnt %d\n",
 				__func__,
 				atomic_read(&ac->nowait_cmd_cnt));
 		atomic_dec(&ac->nowait_cmd_cnt);
 		wakeup_flag = 0;
 	}
-	payload = data->payload;
 
 	if (data->opcode == RESET_EVENTS) {
 		pr_debug("q6asm_callback: Reset event is received: %d %d apr[%p]\n",
@@ -1526,6 +1545,14 @@ int q6asm_open_write(struct audio_client *ac, uint32_t format)
 	case FORMAT_DTS_LBR:
 		open.format = DTS_LBR;
 		break;
+	case FORMAT_AMRWB:
+		open.format = AMRWB_FS;
+		pr_debug("q6asm_open_write FORMAT_AMRWB");
+		break;
+	case FORMAT_AMR_WB_PLUS:
+		open.format = AMR_WB_PLUS;
+		pr_debug("q6asm_open_write FORMAT_AMR_WB_PLUS");
+		break;
 	default:
 		pr_err("%s: Invalid format[%d]\n", __func__, format);
 		goto fail_cmd;
@@ -1597,6 +1624,9 @@ int q6asm_open_read_write(struct audio_client *ac,
 		break;
 	case FORMAT_AMRWB:
 		open.write_format = AMRWB_FS;
+		break;
+	case FORMAT_AMR_WB_PLUS:
+		open.write_format = AMR_WB_PLUS;
 		break;
 	case FORMAT_V13K:
 		open.write_format = V13K_FS;
@@ -1877,7 +1907,16 @@ int q6asm_enc_cfg_blk_multi_ch_pcm(struct audio_client *ac,
 	enc_cfg.enc_blk.cfg.mpcm.sample_rate = rate;
 	enc_cfg.enc_blk.cfg.mpcm.is_signed = 1;
 	enc_cfg.enc_blk.cfg.mpcm.is_interleaved = 1;
-	if (channels == 2) {
+	if (channels == 1) {
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[0] = PCM_CHANNEL_FL;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[1] = 0;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[2] = 0;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[3] = 0;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[4] = 0;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[5] = 0;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[6] = 0;
+		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[7] = 0;
+	} else if (channels == 2) {
 		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[0] = PCM_CHANNEL_FL;
 		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[1] = PCM_CHANNEL_FR;
 		enc_cfg.enc_blk.cfg.mpcm.channel_mapping[2] = 0;
@@ -2005,6 +2044,39 @@ fail_cmd:
 	return -EINVAL;
 }
 
+int q6asm_cfg_aac_sel_mix_coef(struct audio_client *ac, uint32_t mix_coeff)
+{
+	struct asm_aac_stereo_mix_coeff_selection_param aac_mix_coeff;
+	int rc = 0;
+	q6asm_add_hdr(ac, &aac_mix_coeff.hdr, sizeof(aac_mix_coeff), TRUE);
+	aac_mix_coeff.hdr.opcode =
+		 ASM_STREAM_CMD_SET_ENCDEC_PARAM;
+	aac_mix_coeff.param_id =
+		ASM_PARAM_ID_AAC_STEREO_MIX_COEFF_SELECTION_FLAG;
+	aac_mix_coeff.param_size =
+		 sizeof(struct asm_aac_stereo_mix_coeff_selection_param);
+	aac_mix_coeff.aac_stereo_mix_coeff_flag	= mix_coeff;
+	pr_debug("%s, mix_coeff = %u", __func__, mix_coeff);
+	rc = apr_send_pkt(ac->apr, (uint32_t *) &aac_mix_coeff);
+	if (rc < 0) {
+		pr_err("%s:Command opcode[0x%x]paramid[0x%x] failed\n",
+			__func__, ASM_STREAM_CMD_SET_ENCDEC_PARAM,
+			ASM_PARAM_ID_AAC_STEREO_MIX_COEFF_SELECTION_FLAG);
+		rc = -EINVAL;
+		goto fail_cmd;
+	}
+	rc = wait_event_timeout(ac->cmd_wait,
+			(atomic_read(&ac->cmd_state) == 0), 5*HZ);
+	if (!rc) {
+		pr_err("%s:timeout opcode[0x%x]\n", __func__,
+						aac_mix_coeff.hdr.opcode);
+		goto fail_cmd;
+	}
+	return 0;
+fail_cmd:
+	return -EINVAL;
+}
+
 int q6asm_set_encdec_chan_map(struct audio_client *ac,
 			uint32_t num_channels)
 {
@@ -2032,6 +2104,11 @@ int q6asm_set_encdec_chan_map(struct audio_client *ac,
 	} else if (num_channels == 2) {
 		channel_mapping[0] = PCM_CHANNEL_FL;
 		channel_mapping[1] = PCM_CHANNEL_FR;
+	} else if (num_channels == 4) {
+		channel_mapping[0] = PCM_CHANNEL_FL;
+		channel_mapping[1] = PCM_CHANNEL_FR;
+		channel_mapping[1] = PCM_CHANNEL_LB;
+		channel_mapping[1] = PCM_CHANNEL_RB;
 	} else if (num_channels == 6) {
 		channel_mapping[0] = PCM_CHANNEL_FC;
 		channel_mapping[1] = PCM_CHANNEL_FL;
@@ -2039,6 +2116,15 @@ int q6asm_set_encdec_chan_map(struct audio_client *ac,
 		channel_mapping[3] = PCM_CHANNEL_LB;
 		channel_mapping[4] = PCM_CHANNEL_RB;
 		channel_mapping[5] = PCM_CHANNEL_LFE;
+	} else if (num_channels == 8) {
+		channel_mapping[0] = PCM_CHANNEL_FC;
+		channel_mapping[1] = PCM_CHANNEL_FL;
+		channel_mapping[2] = PCM_CHANNEL_FR;
+		channel_mapping[3] = PCM_CHANNEL_LB;
+		channel_mapping[4] = PCM_CHANNEL_RB;
+		channel_mapping[5] = PCM_CHANNEL_LFE;
+		channel_mapping[6] = PCM_CHANNEL_FLC;
+		channel_mapping[7] = PCM_CHANNEL_FRC;
 	} else {
 		pr_err("%s: ERROR.unsupported num_ch = %u\n", __func__,
 				num_channels);
@@ -2295,6 +2381,11 @@ int q6asm_media_format_block_multi_ch_pcm(struct audio_client *ac,
 	} else if (channels == 2) {
 		channel_mapping[0] = PCM_CHANNEL_FL;
 		channel_mapping[1] = PCM_CHANNEL_FR;
+	} else if (channels == 4) {
+		channel_mapping[0] = PCM_CHANNEL_FL;
+		channel_mapping[1] = PCM_CHANNEL_FR;
+		channel_mapping[1] = PCM_CHANNEL_LB;
+		channel_mapping[1] = PCM_CHANNEL_RB;
 	} else if (channels == 6) {
 		channel_mapping[0] = PCM_CHANNEL_FL;
 		channel_mapping[1] = PCM_CHANNEL_FR;
@@ -2302,6 +2393,15 @@ int q6asm_media_format_block_multi_ch_pcm(struct audio_client *ac,
 		channel_mapping[3] = PCM_CHANNEL_LFE;
 		channel_mapping[4] = PCM_CHANNEL_LB;
 		channel_mapping[5] = PCM_CHANNEL_RB;
+	} else if (channels == 8) {
+		channel_mapping[0] = PCM_CHANNEL_FC;
+		channel_mapping[1] = PCM_CHANNEL_FL;
+		channel_mapping[2] = PCM_CHANNEL_FR;
+		channel_mapping[3] = PCM_CHANNEL_LB;
+		channel_mapping[4] = PCM_CHANNEL_RB;
+		channel_mapping[5] = PCM_CHANNEL_LFE;
+		channel_mapping[6] = PCM_CHANNEL_FLC;
+		channel_mapping[7] = PCM_CHANNEL_FRC;
 	} else {
 		pr_err("%s: ERROR.unsupported num_ch = %u\n", __func__,
 				channels);
@@ -2372,7 +2472,56 @@ fail_cmd:
 	return -EINVAL;
 }
 
+int q6asm_media_format_block_amrwbplus(struct audio_client *ac,
+					struct asm_amrwbplus_cfg *cfg)
+{
+	struct asm_stream_media_format_update fmt;
+	int rc = 0;
+	pr_debug("q6asm_media_format_block_amrwbplus");
 
+	pr_debug("%s:session[%d]band-mode[%d]frame-fmt[%d]ch[%d]\n",
+		__func__,
+		ac->session,
+		cfg->amr_band_mode,
+		cfg->amr_frame_fmt,
+		cfg->num_channels);
+
+	q6asm_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE);
+
+	fmt.hdr.opcode = ASM_DATA_CMD_MEDIA_FORMAT_UPDATE;
+
+	fmt.format = AMR_WB_PLUS;
+	fmt.cfg_size = cfg->size_bytes;
+
+	fmt.write_cfg.amrwbplus_cfg.size_bytes    = cfg->size_bytes;
+	fmt.write_cfg.amrwbplus_cfg.version       = cfg->version;
+	fmt.write_cfg.amrwbplus_cfg.num_channels  = cfg->num_channels;
+	fmt.write_cfg.amrwbplus_cfg.amr_band_mode = cfg->amr_band_mode;
+	fmt.write_cfg.amrwbplus_cfg.amr_dtx_mode  = cfg->amr_dtx_mode;
+	fmt.write_cfg.amrwbplus_cfg.amr_frame_fmt = cfg->amr_frame_fmt;
+	fmt.write_cfg.amrwbplus_cfg.amr_lsf_idx   = cfg->amr_lsf_idx;
+
+	pr_debug("%s: num_channels=%x amr_band_mode=%d amr_frame_fmt=%d\n",
+			__func__,
+			cfg->num_channels,
+			cfg->amr_band_mode,
+			cfg->amr_frame_fmt);
+
+	rc = apr_send_pkt(ac->apr, (uint32_t *) &fmt);
+	if (rc < 0) {
+		pr_err("%s:Comamnd media format update failed..\n", __func__);
+		goto fail_cmd;
+	}
+	rc = wait_event_timeout(ac->cmd_wait,
+				(atomic_read(&ac->cmd_state) == 0), 5*HZ);
+	if (!rc) {
+		pr_err("%s:timeout. waited for FORMAT_UPDATE\n", __func__);
+		goto fail_cmd;
+	}
+	return 0;
+fail_cmd:
+	return -EINVAL;
+}
 int q6asm_media_format_block_multi_aac(struct audio_client *ac,
 				struct asm_aac_cfg *cfg)
 {
@@ -2443,6 +2592,9 @@ int q6asm_media_format_block(struct audio_client *ac, uint32_t format)
 		break;
 	case FORMAT_AMRWB:
 		fmt.format = AMRWB_FS;
+		break;
+	case FORMAT_AMR_WB_PLUS:
+		fmt.format = AMR_WB_PLUS;
 		break;
 	case FORMAT_AMRNB:
 		fmt.format = AMRNB_FS;
@@ -3531,13 +3683,13 @@ fail_cmd:
 	return -EINVAL;
 }
 
-uint64_t q6asm_get_session_time(struct audio_client *ac)
+int q6asm_get_session_time(struct audio_client *ac, uint64_t *tstamp)
 {
 	struct apr_hdr hdr;
 	int rc;
 
-	if (!ac || ac->apr == NULL) {
-		pr_err("APR handle NULL\n");
+	if (!ac || ac->apr == NULL || tstamp == NULL) {
+		pr_err("APR handle or tstamp NULL\n");
 		return -EINVAL;
 	}
 	q6asm_add_hdr(ac, &hdr, sizeof(hdr), FALSE);
@@ -3559,7 +3711,9 @@ uint64_t q6asm_get_session_time(struct audio_client *ac)
 			__func__);
 		goto fail_cmd;
 	}
-	return ac->time_stamp;
+
+	*tstamp = ac->time_stamp;
+	return 0;
 
 fail_cmd:
 	return -EINVAL;

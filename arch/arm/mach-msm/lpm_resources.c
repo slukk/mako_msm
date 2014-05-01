@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -353,18 +353,21 @@ static ssize_t msm_lpm_resource_attr_store(struct kobject *kobj,
 
 /* lpm resource handling functions */
 /* Common */
-static void msm_lpm_notify_common(struct msm_rpm_notifier_data *rpm_notifier_cb,
+static void msm_lpm_notify_common(struct msm_rpm_notifier_data *cb,
 				struct msm_lpm_resource *rs)
 {
-	if ((rpm_notifier_cb->rsc_type == rs->rs_data.type) &&
-			(rpm_notifier_cb->rsc_id == rs->rs_data.id) &&
-			(rpm_notifier_cb->key == rs->rs_data.key)) {
-		BUG_ON(rpm_notifier_cb->size > MAX_RS_SIZE);
+	if ((cb->rsc_type == rs->rs_data.type) &&
+		(cb->rsc_id == rs->rs_data.id) &&
+		(cb->key == rs->rs_data.key)) {
+
+		BUG_ON(cb->size > MAX_RS_SIZE);
 
 		if (rs->valid) {
-			if (rpm_notifier_cb->value)
-				memcpy(&rs->rs_data.value,
-				rpm_notifier_cb->value, rpm_notifier_cb->size);
+			if (cb->value) {
+				memcpy(&rs->rs_data.value, cb->value, cb->size);
+				msm_rpm_add_kvp_data_noirq(rs->rs_data.handle,
+						cb->key, cb->value, cb->size);
+			}
 			else
 				rs->rs_data.value = rs->rs_data.default_value;
 
@@ -695,7 +698,7 @@ static int msm_lpm_cpu_callback(struct notifier_block *cpu_nb,
 	case CPU_DEAD_FROZEN:
 	case CPU_DEAD:
 		if (num_online_cpus() == 1)
-			rs->rs_data.value = MSM_LPM_L2_CACHE_GDHS;
+			rs->rs_data.value = MSM_LPM_L2_CACHE_HSFS_OPEN;
 		break;
 	}
 	return NOTIFY_OK;
@@ -848,6 +851,7 @@ static int __devinit msm_lpmrs_probe(struct platform_device *pdev)
 		msm_lpm_l2.rs_data.default_value = MSM_LPM_L2_CACHE_HSFS_OPEN;
 		msm_lpm_l2.rs_data.value = MSM_LPM_L2_CACHE_HSFS_OPEN;
 	}
+	msm_pm_set_l2_flush_flag(0);
 	return 0;
 fail:
 	return ret;

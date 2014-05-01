@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -446,6 +446,13 @@ static struct msm_gpiomux_config msm8960_gsbi_configs[] __initdata = {
 		.settings = {
 			[GPIOMUX_SUSPENDED] = &gsbi3_suspended_cfg,
 			[GPIOMUX_ACTIVE] = &gsbi3_active_cfg,
+		},
+	},
+	{
+		.gpio      = 26,	/* GSBI6 WLAN_PWD_L for AR6004 */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gsbi6_suspended_cfg,
+			[GPIOMUX_ACTIVE] = &gsbi6_active_cfg,
 		},
 	},
 	{

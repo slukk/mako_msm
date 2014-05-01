@@ -1,4 +1,4 @@
-/*  Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/*  Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -4061,7 +4061,7 @@ static void voice_allocate_shared_memory(void)
 
 	common.ion_handle = ion_alloc(common.ion_client,
 				TOTAL_VOICE_CAL_SIZE,
-				SZ_4K, ION_HEAP(ION_AUDIO_HEAP_ID));
+				SZ_4K, ION_HEAP(ION_AUDIO_HEAP_ID), 0);
 	if (IS_ERR_OR_NULL((void *) common.ion_handle)) {
 		pr_err("%s: ION memory allocation failed\n",
 			__func__);
@@ -4076,8 +4076,7 @@ static void voice_allocate_shared_memory(void)
 		goto err_ion_handle;
 	}
 
-	kvptr = ion_map_kernel(common.ion_client,
-				common.ion_handle, 0);
+	kvptr = ion_map_kernel(common.ion_client, common.ion_handle);
 	if (IS_ERR_OR_NULL(kvptr)) {
 		pr_err("%s: ION memory mapping failed\n", __func__);
 		goto err_ion_handle;

@@ -452,6 +452,8 @@ __acquires(&port->port_lock)
 		prev_len = req->length;
 		port->nbytes_from_tty += req->length;
 
+		port->write_started++;
+
 	}
 
 	if (do_tty_wake && port->port_tty)
@@ -855,13 +857,6 @@ static int gs_open(struct tty_struct *tty, struct file *file)
 
 	port->open_count = 1;
 	port->openclose = false;
-
-	/* low_latency means ldiscs work is carried in the same context
-	 * of tty_flip_buffer_push. The same can be called from IRQ with
-	 * low_latency = 0. But better to use a dedicated worker thread
-	 * to push the data.
-	 */
-	tty->low_latency = 1;
 
 	/* if connected, start the I/O stream */
 	if (port->port_usb) {
@@ -1399,7 +1394,6 @@ int gserial_setup(struct usb_gadget *g, unsigned count)
 	/* export the driver ... */
 	status = tty_register_driver(gs_tty_driver);
 	if (status) {
-		put_tty_driver(gs_tty_driver);
 		pr_err("%s: cannot register, err %d\n",
 				__func__, status);
 		goto fail;

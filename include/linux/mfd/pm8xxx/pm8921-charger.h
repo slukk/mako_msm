@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -94,6 +94,7 @@ enum pm8921_chg_led_src_config {
  *			however, this should only be enabled for devices which
  *			control the DC OVP FETs otherwise this option should
  *			remain disabled
+ * @has_dc_supply:	report DC online if this bit is set in board file
  * @trkl_voltage:	the trkl voltage in (mV) below which hw controlled
  *			 trkl charging happens with linear charger
  * @weak_voltage:	the weak voltage (mV) below which hw controlled
@@ -145,6 +146,7 @@ struct pm8921_charger_platform_data {
 	int64_t				batt_id_max;
 	bool				keep_btm_on_suspend;
 	bool				dc_unplug_check;
+	bool				has_dc_supply;
 	int				trkl_voltage;
 	int				weak_voltage;
 	int				trkl_current;
@@ -285,14 +287,11 @@ int pm8921_usb_ovp_set_hystersis(enum pm8921_usb_debounce_time ms);
  *
  */
 int pm8921_usb_ovp_disable(int disable);
-#ifdef CONFIG_WIRELESS_CHARGER
-int set_wireless_power_supply_control(int value);
-#endif
 
-int pm8921_set_ext_battery_health(int health, int i_limit);
 int pm8921_get_batt_state(void);
 int pm8921_force_start_charging(void);
 int pm8921_get_batt_health(void);
+int pm8921_is_chg_auto_enable(void);
 
 /**
  * pm8921_is_batfet_closed - battery fet status
@@ -301,6 +300,12 @@ int pm8921_get_batt_health(void);
  * batfet this will return 0.
  */
 int pm8921_is_batfet_closed(void);
+#ifdef CONFIG_WIRELESS_CHARGER
+int set_wireless_power_supply_control(int value);
+#endif
+
+int pm8921_set_ext_battery_health(int health, int i_limit);
+
 #else
 static inline void pm8921_charger_vbus_draw(unsigned int mA)
 {

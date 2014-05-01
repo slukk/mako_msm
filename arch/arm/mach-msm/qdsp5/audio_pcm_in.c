@@ -2,7 +2,7 @@
  *
  * pcm audio input device
  *
- * Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This code is based in part on arch/arm/mach-msm/qdsp5v2/audio_pcm_in.c,
  * Copyright (C) 2008 Google, Inc.
@@ -26,7 +26,7 @@
 #include <linux/kthread.h>
 #include <linux/wait.h>
 #include <linux/dma-mapping.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 
 #include <linux/delay.h>
 
@@ -847,7 +847,7 @@ static int audpcm_in_open(struct inode *inode, struct file *file)
 
 	MM_DBG("allocating mem sz = %d\n", DMASZ);
 	handle = ion_alloc(client, DMASZ, SZ_4K,
-		ION_HEAP(ION_AUDIO_HEAP_ID));
+		ION_HEAP(ION_AUDIO_HEAP_ID), 0);
 	if (IS_ERR_OR_NULL(handle)) {
 		MM_ERR("Unable to create allocate O/P buffers\n");
 		rc = -ENOMEM;
@@ -875,7 +875,7 @@ static int audpcm_in_open(struct inode *inode, struct file *file)
 		goto output_buff_get_flags_error;
 	}
 
-	audio->data = ion_map_kernel(client, handle, ionflag);
+	audio->data = ion_map_kernel(client, handle);
 	if (IS_ERR(audio->data)) {
 		MM_ERR("could not map read buffers,freeing instance 0x%08x\n",
 				(int)audio);

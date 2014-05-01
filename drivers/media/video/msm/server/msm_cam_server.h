@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,8 @@
 #include "../msm.h"
 
 uint32_t msm_cam_server_get_mctl_handle(void);
+struct iommu_domain *msm_cam_server_get_domain(void);
+int msm_cam_server_get_domain_num(void);
 struct msm_cam_media_controller *msm_cam_server_get_mctl(uint32_t handle);
 void msm_cam_server_free_mctl(uint32_t handle);
 /* Server session control APIs */

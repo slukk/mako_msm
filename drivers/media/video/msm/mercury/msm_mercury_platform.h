@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,7 +15,7 @@
 
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 
 int msm_mercury_platform_clk_enable(void);
 int msm_mercury_platform_clk_disable(void);

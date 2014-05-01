@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2013, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -267,7 +267,7 @@ static void vid_enc_output_frame_done(struct video_client_ctx *client_ctx,
 		ion_flag = vidc_get_fd_info(client_ctx, BUFFER_TYPE_OUTPUT,
 					pmem_fd, kernel_vaddr, buffer_index,
 					&buff_handle);
-		if (ion_flag == CACHED && buff_handle) {
+		if (ion_flag == ION_FLAG_CACHED && buff_handle) {
 			msm_ion_do_cache_op(client_ctx->user_ion_client,
 				buff_handle,
 				(unsigned long *) kernel_vaddr,
@@ -550,7 +550,7 @@ static int vid_enc_open_client(struct video_client_ctx **vid_clnt_ctx,
 
 	client_index = vid_enc_get_empty_client_index();
 
-	if (client_index == -1) {
+	if (client_index < 0) {
 		ERR("%s() : No free clients client_index == -1\n",
 			__func__);
 		rc = -ENODEV;
@@ -1728,6 +1728,26 @@ static long vid_enc_ioctl(struct file *file,
 				&vcd_property_hdr, &idr_enable);
 		if (vcd_status) {
 			pr_err("Setting sps/pps per IDR failed");
+			return -EIO;
+		}
+		break;
+	}
+	case VEN_IOCTL_SET_VUI_BITSTREAM_RESTRICT_FLAG:
+	{
+		struct vcd_property_hdr vcd_property_hdr;
+		struct vcd_property_bitstream_restrict_enable vcd_property_val;
+		u32 vcd_status = VCD_ERR_FAIL;
+
+		vcd_property_hdr.prop_id = VCD_I_ENABLE_VUI_BITSTREAM_RESTRICT_FLAG;
+		vcd_property_hdr.sz = sizeof(struct
+				vcd_property_bitstream_restrict_enable);
+
+		vcd_property_val.bitstream_restrict_enable_flag = true;
+
+		vcd_status = vcd_set_property(client_ctx->vcd_handle,
+				&vcd_property_hdr, &vcd_property_val);
+		if (vcd_status) {
+			pr_err("Setting bitstream restrict flag failed");
 			return -EIO;
 		}
 		break;

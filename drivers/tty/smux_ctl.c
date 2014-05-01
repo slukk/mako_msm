@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -770,12 +770,13 @@ static unsigned int smux_ctl_poll(struct file *file, poll_table *wait)
 	poll_wait(file, &devp->read_wait_queue, wait);
 
 	readable = smux_ctl_readable(devp->id);
-	if (readable < 0) {
+	if (readable > 0) {
+		mask = POLLIN | POLLRDNORM;
+	} else if ((readable < 0) && (readable != -ERESTARTSYS)) {
+		/* error case (non-signal) received */
 		pr_err(SMUX_CTL_MODULE_NAME ": %s err%d during poll for smuxctl%d\n",
 			__func__, readable, devp->id);
 		mask = POLLERR;
-	} else if (readable) {
-		mask = POLLIN | POLLRDNORM;
 	}
 
 	return mask;

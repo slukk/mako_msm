@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008 Google, Inc.
- * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2012, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,7 +26,7 @@
 #include <mach/dma.h>
 #include <mach/board.h>
 #include <asm/clkdev.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include "devices.h"
 #include "footswitch.h"
 
@@ -1295,7 +1295,6 @@ static struct kgsl_device_platform_data kgsl_3d0_pdata = {
 	.num_levels = 3,
 	.set_grp_async = set_grp3d_async,
 	.idle_timeout = HZ/20,
-	.nap_allowed = true,
 	.idle_needed = true,
 	.clk_map = KGSL_CLK_SRC | KGSL_CLK_CORE |
 		KGSL_CLK_IFACE | KGSL_CLK_MEM,
@@ -1329,7 +1328,7 @@ static struct resource kgsl_2d0_resources[] = {
 static struct kgsl_device_platform_data kgsl_2d0_pdata = {
 	.pwrlevel = {
 		{
-			.gpu_freq = 192000000,
+			.gpu_freq = 0,
 			.bus_freq = 192000000,
 		},
 	},
@@ -1338,7 +1337,6 @@ static struct kgsl_device_platform_data kgsl_2d0_pdata = {
 	/* HW workaround, run Z180 SYNC @ 192 MHZ */
 	.set_grp_async = NULL,
 	.idle_timeout = HZ/10,
-	.nap_allowed = true,
 	.idle_needed = true,
 	.clk_map = KGSL_CLK_CORE | KGSL_CLK_IFACE,
 };

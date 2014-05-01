@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -978,6 +978,16 @@ struct asm_aac_cfg {
 	u32 sample_rate;
 };
 
+struct asm_amrwbplus_cfg {
+	u32  size_bytes;
+	u32  version;
+	u32  num_channels;
+	u32  amr_band_mode;
+	u32  amr_dtx_mode;
+	u32  amr_frame_fmt;
+	u32  amr_lsf_idx;
+};
+
 struct asm_flac_cfg {
 	u16 stream_info_present;
 	u16 min_blk_size;
@@ -1268,6 +1278,17 @@ struct asm_stream_cmd_encdec_dualmono {
 	struct asm_dual_mono channel_map;
 } __packed;
 
+#define ASM_PARAM_ID_AAC_STEREO_MIX_COEFF_SELECTION_FLAG        0x00010DD8
+
+/* Structure for AAC decoder stereo coefficient setting. */
+
+struct asm_aac_stereo_mix_coeff_selection_param {
+	struct apr_hdr				hdr;
+	u32					param_id;
+	u32					param_size;
+	u32					aac_stereo_mix_coeff_flag;
+} __packed;
+
 #define ASM_ENCDEC_DEC_CHAN_MAP				 0x00010D82
 struct asm_stream_cmd_encdec_channelmap {
 	struct apr_hdr hdr;
@@ -1373,7 +1394,7 @@ struct asm_stream_cmd_read{
 	u32	uid;
 } __attribute__((packed));
 
-#define ASM_DATA_CMD_READ_COMPRESSED                     0x00010DBC
+#define ASM_DATA_CMD_READ_COMPRESSED                     0x00010DBF
 struct asm_stream_cmd_read_compressed {
 	struct apr_hdr     hdr;
 	u32	buf_add;
@@ -1398,6 +1419,7 @@ struct asm_stream_media_format_update{
 		struct asm_flac_cfg        flac_cfg;
 		struct asm_vorbis_cfg      vorbis_cfg;
 		struct asm_multi_channel_pcm_fmt_blk multi_ch_pcm_cfg;
+		struct asm_amrwbplus_cfg   amrwbplus_cfg;
 	} __attribute__((packed)) write_cfg;
 } __attribute__((packed));
 
@@ -1444,7 +1466,7 @@ struct asm_data_event_read_done{
 	u32            id;
 } __attribute__((packed));
 
-#define ASM_DATA_EVENT_READ_COMPRESSED_DONE              0x00010DBD
+#define ASM_DATA_EVENT_READ_COMPRESSED_DONE              0x00010DC0
 struct asm_data_event_read_compressed_done {
 	u32            status;
 	u32            buffer_add;

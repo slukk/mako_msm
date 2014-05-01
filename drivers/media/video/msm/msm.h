@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,8 +31,9 @@
 #include <media/videobuf2-msm-mem.h>
 #include <media/msm_isp.h>
 #include <mach/camera.h>
+#include <mach/iommu.h>
 #include <media/msm_isp.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <linux/iommu.h>
 #include <media/msm_gestures.h>
 
@@ -204,10 +205,36 @@ struct msm_isp_color_fmt {
 	enum v4l2_colorspace colorspace;
 };
 
+struct msm_cam_return_frame_info {
+	int dirty;
+	int node_type;
+	struct timeval timestamp;
+};
+
+struct msm_cam_timestamp {
+	uint8_t present;
+	struct timeval timestamp;
+};
+
+struct msm_cam_buf_map_info {
+	int fd;
+	uint32_t data_offset;
+	unsigned long paddr;
+	unsigned long len;
+	struct file *file;
+	struct ion_handle *handle;
+};
+
+struct msm_cam_meta_frame {
+	struct msm_pp_frame frame;
+	/* Mapping information per plane */
+	struct msm_cam_buf_map_info map[VIDEO_MAX_PLANES];
+};
+
 struct msm_mctl_pp_frame_info {
 	int user_cmd;
-	struct msm_pp_frame src_frame;
-	struct msm_pp_frame dest_frame;
+	struct msm_cam_meta_frame src_frame;
+	struct msm_cam_meta_frame dest_frame;
 	struct msm_mctl_pp_frame_cmd pp_frame_cmd;
 	struct msm_cam_media_controller *p_mctl;
 };
@@ -285,6 +312,10 @@ struct msm_cam_media_controller {
 	uint32_t ping_imem_cbcr;
 	uint32_t pong_imem_y;
 	uint32_t pong_imem_cbcr;
+
+	/*IOMMU domain for this session*/
+	int domain_num;
+	struct iommu_domain *domain;
 };
 
 /* abstract camera device represents a VFE and connected sensor */
@@ -399,6 +430,8 @@ struct msm_cam_config_dev {
 	struct msm_cam_media_controller *p_mctl;
 	struct msm_mem_map_info mem_map;
 	int dev_num;
+	int domain_num;
+	struct iommu_domain *domain;
 };
 
 struct msm_cam_subdev_info {
@@ -558,6 +591,10 @@ struct msm_cam_server_dev {
 	 * dispatch the irq to the corresponding subdev. */
 	struct v4l2_subdev *subdev_table[MSM_CAM_HW_MAX];
 	struct msm_cam_server_irqmap_entry hw_irqmap[CAMERA_SS_IRQ_MAX];
+
+    /*IOMMU domain (Page table)*/
+	int domain_num;
+	struct iommu_domain *domain;
 };
 
 enum msm_cam_buf_lookup_type {
@@ -592,7 +629,8 @@ int msm_mctl_buf_done(struct msm_cam_media_controller *pmctl,
 	uint32_t frame_id);
 int msm_mctl_buf_done_pp(struct msm_cam_media_controller *pmctl,
 	struct msm_cam_buf_handle *buf_handle,
-	struct msm_free_buf *frame, int dirty, int node_type);
+	struct msm_free_buf *frame,
+	struct msm_cam_return_frame_info *ret_frame);
 int msm_mctl_reserve_free_buf(struct msm_cam_media_controller *pmctl,
 	struct msm_cam_v4l2_dev_inst *pcam_inst,
 	struct msm_cam_buf_handle *buf_handle,
@@ -602,9 +640,9 @@ int msm_mctl_release_free_buf(struct msm_cam_media_controller *pmctl,
 	struct msm_free_buf *free_buf);
 /*Memory(PMEM) functions*/
 int msm_register_pmem(struct hlist_head *ptype, void __user *arg,
-	struct ion_client *client);
+	struct ion_client *client, int domain_num);
 int msm_pmem_table_del(struct hlist_head *ptype, void __user *arg,
-	struct ion_client *client);
+	struct ion_client *client, int domain_num);
 int msm_pmem_region_get_phy_addr(struct hlist_head *ptype,
 	struct msm_mem_map_info *mem_map, int32_t *phyaddr);
 uint8_t msm_pmem_region_lookup(struct hlist_head *ptype,
@@ -626,7 +664,7 @@ int msm_isp_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_vfe_cfg_cmd *cfgcmd, void *data);
 int msm_vpe_subdev_init(struct v4l2_subdev *sd);
 int msm_gemini_subdev_init(struct v4l2_subdev *gemini_sd);
-void msm_vpe_subdev_release(void);
+void msm_vpe_subdev_release(struct v4l2_subdev *sd);
 void msm_gemini_subdev_release(struct v4l2_subdev *gemini_sd);
 int msm_mctl_is_pp_msg_type(struct msm_cam_media_controller *p_mctl,
 	int msg_type);
@@ -671,6 +709,10 @@ struct msm_cam_v4l2_dev_inst *msm_mctl_get_pcam_inst(
 	struct msm_cam_buf_handle *buf_handle);
 int msm_mctl_buf_return_buf(struct msm_cam_media_controller *pmctl,
 	int image_mode, struct msm_frame_buffer *buf);
+int msm_mctl_map_user_frame(struct msm_cam_meta_frame *meta_frame,
+	struct ion_client *client, int domain_num);
+int msm_mctl_unmap_user_frame(struct msm_cam_meta_frame *meta_frame,
+	struct ion_client *client, int domain_num);
 int msm_mctl_pp_mctl_divert_done(struct msm_cam_media_controller *p_mctl,
 	void __user *arg);
 void msm_release_ion_client(struct kref *ref);

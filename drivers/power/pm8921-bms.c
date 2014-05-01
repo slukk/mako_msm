@@ -130,7 +130,7 @@ struct pm8921_bms_chip {
 	int			default_rbatt_mohm;
 	int			amux_2_trim_delta;
 	uint16_t		prev_last_good_ocv_raw;
-	unsigned int		rconn_mohm;
+	int			rconn_mohm;
 	struct mutex		last_ocv_uv_mutex;
 	int			last_ocv_uv;
 	int			pon_ocv_uv;
@@ -1652,6 +1652,8 @@ static int charging_adjustments(struct pm8921_bms_chip *chip,
 	int chg_soc;
 	int max_vol;
 	int eoc_current;
+	int vbat_batt_terminal_uv = vbat_uv
+			+ (ibat_ua * chip->rconn_mohm) / 1000;
 
 	max_vol = chip->max_voltage_uv;
 	eoc_current = -chip->chg_term_ua;
@@ -1663,15 +1665,15 @@ static int charging_adjustments(struct pm8921_bms_chip *chip,
 
 	if (chip->soc_at_cv == -EINVAL) {
 		/* In constant current charging return the calc soc */
-		if (vbat_uv <= max_vol)
+		if (vbat_batt_terminal_uv <= max_vol)
 			pr_debug("CC CHG SOC %d\n", soc);
 
 		/* Note the CC to CV point */
-		if (vbat_uv >= max_vol) {
+		if (vbat_batt_terminal_uv >= max_vol) {
 			chip->soc_at_cv = soc;
 			chip->prev_chg_soc = soc;
 			chip->ibat_at_cv_ua = ibat_ua;
-			chip->vbat_at_cv = vbat_uv;
+			chip->vbat_at_cv = max_vol;
 			pr_debug("CC_TO_CV ibat_ua = %d CHG SOC %d\n",
 					ibat_ua, soc);
 		}
@@ -1680,7 +1682,7 @@ static int charging_adjustments(struct pm8921_bms_chip *chip,
 			chip->soc_at_cv = soc;
 			chip->prev_chg_soc = soc;
 			chip->ibat_at_cv_ua = ibat_ua;
-			chip->vbat_at_cv = vbat_uv;
+			chip->vbat_at_cv = vbat_batt_terminal_uv;
 			pr_debug("Force CC_TO_CV ibat_ua = %d CHG SOC %d\n",
 					ibat_ua, soc);
 		}
@@ -1696,9 +1698,9 @@ static int charging_adjustments(struct pm8921_bms_chip *chip,
 	 * if voltage lessened (possibly because of a system load)
 	 * keep reporting the prev chg soc
 	 */
-	if (vbat_uv <= chip->vbat_at_cv) {
+	if (vbat_batt_terminal_uv <= chip->vbat_at_cv) {
 		pr_debug("vbat %d < max = %d CC CHG SOC %d\n",
-			vbat_uv, chip->vbat_at_cv, chip->prev_chg_soc);
+			vbat_batt_terminal_uv, chip->vbat_at_cv, chip->prev_chg_soc);
 		return chip->prev_chg_soc;
 	}
 
@@ -1706,7 +1708,7 @@ static int charging_adjustments(struct pm8921_bms_chip *chip,
 			&& chip->wlc_is_plugged()
 			&& chip->prev_chg_soc < 99
 			&& ibat_ua > eoc_current) {
-		pr_info("ibat < eco_current ! soc = %d \n", chip->prev_chg_soc);
+		pr_info("ibat < eoc_current ! soc = %d \n", chip->prev_chg_soc);
 		return chip->prev_chg_soc;
 	}
 
@@ -1968,12 +1970,12 @@ static int scale_soc_while_chg(struct pm8921_bms_chip *chip,
 	if (the_chip->start_percent == -EINVAL)
 		return prev_soc;
 
-	/* if soc is called in quick succession return the last soc */
-	if (delta_time_us < USEC_PER_SEC)
-		return prev_soc;
-
 	chg_time_sec = DIV_ROUND_UP(the_chip->charge_time_us, USEC_PER_SEC);
 	catch_up_sec = DIV_ROUND_UP(the_chip->catch_up_time_us, USEC_PER_SEC);
+
+	if (catch_up_sec == 0)
+		return new_soc;
+
 	pr_debug("cts= %d catch_up_sec = %d\n", chg_time_sec, catch_up_sec);
 
 	/*
@@ -2130,11 +2132,6 @@ static int calculate_state_of_charge(struct pm8921_bms_chip *chip,
 	if (soc > 100)
 		soc = 100;
 
-	if (bms_fake_battery != -EINVAL) {
-		pr_debug("Returning Fake SOC = %d%%\n", bms_fake_battery);
-		return bms_fake_battery;
-	}
-
 	if (soc < 0) {
 		pr_err("bad rem_usb_chg = %d rem_chg %d,"
 				"cc_uah %d, unusb_chg %d\n",
@@ -2253,6 +2250,11 @@ static int report_state_of_charge(struct pm8921_bms_chip *chip)
 	int batt_temp;
 	int rc;
 
+	if (bms_fake_battery != -EINVAL) {
+		pr_debug("Returning Fake SOC = %d%%\n", bms_fake_battery);
+		return bms_fake_battery;
+	}
+
 	rc = pm8xxx_adc_read(the_chip->batt_temp_channel, &result);
 	if (rc) {
 		pr_err("error reading adc channel = %d, rc = %d\n",
@@ -2306,8 +2308,8 @@ static int report_state_of_charge(struct pm8921_bms_chip *chip)
 	}
 
 	/* last_soc < soc  ... scale and catch up */
-	if (last_soc != -EINVAL && soc != 100
-			&& (last_soc < soc || the_chip->start_percent != -EINVAL))
+	if (last_soc != -EINVAL && last_soc < soc
+			&& (soc != 100 || pm8921_is_chg_auto_enable()))
 		soc = scale_soc_while_chg(chip, delta_time_us, soc, last_soc);
 
 	if (chip->eoc_check_soc && is_eoc_adjust(chip, soc)) {

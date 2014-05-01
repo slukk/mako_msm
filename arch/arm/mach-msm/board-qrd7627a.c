@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,7 +32,7 @@
 #include <linux/input/ft5x06_ts.h>
 #include <linux/msm_adc.h>
 #include <linux/regulator/msm-gpio-regulator.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <asm/mach/mmc.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -74,6 +74,13 @@
 #define FM_I2S_SCK_MODE   0x90
 #define I2C_PIN_CTL       0x15
 #define I2C_NORMAL        0x40
+
+#define SNDDEV_CAP_NONE 0x0
+#define SNDDEV_CAP_RX 0x1 /* RX direction */
+#define SNDDEV_CAP_TX 0x2 /* TX direction */
+#define SNDDEV_CAP_VOICE 0x4 /* Support voice call */
+#define SNDDEV_CAP_FM 0x10 /* Support FM radio */
+#define SNDDEV_CAP_TTY 0x20 /* Support TTY */
 
 static struct platform_device msm_wlan_ar6000_pm_device = {
 	.name           = "wlan_ar6000_pm_dev",
@@ -131,13 +138,14 @@ static struct msm_i2c_platform_data msm_gsbi1_qup_i2c_pdata = {
 #ifdef CONFIG_ARCH_MSM7X27A
 #define MSM_PMEM_MDP_SIZE       0x1B00000
 #define MSM_PMEM_ADSP_SIZE      0x1200000
+#define CAMERA_ZSL_SIZE		(SZ_1M * 60)
 
-#define MSM_ION_AUDIO_SIZE	(MSM_PMEM_AUDIO_SIZE + PMEM_KERNEL_EBI1_SIZE)
-#define MSM_ION_CAMERA_SIZE	MSM_PMEM_ADSP_SIZE
-#define MSM_ION_SF_SIZE		MSM_PMEM_MDP_SIZE
-#define MSM_ION_HEAP_NUM	4
 #ifdef CONFIG_ION_MSM
+#define MSM_ION_HEAP_NUM	4
 static struct platform_device ion_dev;
+static int msm_ion_camera_size;
+static int msm_ion_audio_size;
+static int msm_ion_sf_size;
 #endif
 #endif
 
@@ -454,6 +462,56 @@ static struct platform_device msm_device_snd = {
 	},
 };
 
+#define CAD(desc, num, cap) { .name = #desc, .id = num, .capability = cap, }
+static struct cad_endpoint cad_endpoints_list[] = {
+	CAD(NONE, 0, SNDDEV_CAP_NONE),
+	CAD(HANDSET_SPKR, 1, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(HANDSET_MIC, 2, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(HEADSET_MIC, 3, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(HEADSET_SPKR_MONO, 4, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(HEADSET_SPKR_STEREO, 5, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(SPEAKER_PHONE_MIC, 6, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(SPEAKER_PHONE_MONO, 7, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(SPEAKER_PHONE_STEREO, 8, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(BT_SCO_MIC, 9, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(BT_SCO_SPKR, 10, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(BT_A2DP_SPKR, 11, (SNDDEV_CAP_RX | SNDDEV_CAP_VOICE)),
+	CAD(TTY_HEADSET_MIC, 12, (SNDDEV_CAP_TX | \
+			SNDDEV_CAP_VOICE | SNDDEV_CAP_TTY)),
+	CAD(TTY_HEADSET_SPKR, 13, (SNDDEV_CAP_RX | \
+			SNDDEV_CAP_VOICE | SNDDEV_CAP_TTY)),
+	CAD(HEADSET_STEREO_PLUS_SPKR_MONO_RX, 19, (SNDDEV_CAP_TX | \
+				SNDDEV_CAP_VOICE)),
+	CAD(LP_FM_HEADSET_SPKR_STEREO_RX, 25, (SNDDEV_CAP_TX | SNDDEV_CAP_FM)),
+	CAD(I2S_RX, 26, (SNDDEV_CAP_RX)),
+	CAD(SPEAKER_PHONE_MIC_ENDFIRE, 45, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(HANDSET_MIC_ENDFIRE, 46, (SNDDEV_CAP_TX | SNDDEV_CAP_VOICE)),
+	CAD(I2S_TX, 48, (SNDDEV_CAP_TX)),
+	CAD(LP_FM_HEADSET_SPKR_STEREO_PLUS_HEADSET_SPKR_STEREO_RX, 57, \
+				(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(FM_DIGITAL_HEADSET_SPKR_STEREO, 65, \
+			(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(FM_DIGITAL_SPEAKER_PHONE_MONO, 67, \
+			(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(FM_DIGITAL_BT_A2DP_SPKR, 69, \
+			(SNDDEV_CAP_FM | SNDDEV_CAP_RX)),
+	CAD(MAX, 80, SNDDEV_CAP_NONE),
+};
+#undef CAD
+
+static struct msm_cad_endpoints msm_device_cad_endpoints = {
+	.endpoints = cad_endpoints_list,
+	.num = sizeof(cad_endpoints_list) / sizeof(struct cad_endpoint)
+};
+
+static struct platform_device msm_device_cad = {
+	.name = "msm_cad",
+	.id = -1,
+	.dev    = {
+		.platform_data = &msm_device_cad_endpoints
+	},
+};
+
 #define DEC0_FORMAT ((1<<MSM_ADSP_CODEC_MP3)| \
 	(1<<MSM_ADSP_CODEC_AAC)|(1<<MSM_ADSP_CODEC_WMA)| \
 	(1<<MSM_ADSP_CODEC_WMAPRO)|(1<<MSM_ADSP_CODEC_AMRWB)| \
@@ -636,6 +694,30 @@ static struct platform_device msm_adc_device = {
 	},
 };
 
+#ifdef CONFIG_MSM_RTB
+static struct msm_rtb_platform_data msm7627a_rtb_pdata = {
+	.size = SZ_1M,
+};
+
+static int __init msm_rtb_set_buffer_size(char *p)
+{
+	int s;
+
+	s = memparse(p, NULL);
+	msm7627a_rtb_pdata.size = ALIGN(s, SZ_4K);
+	return 0;
+}
+early_param("msm_rtb_size", msm_rtb_set_buffer_size);
+
+struct platform_device msm7627a_rtb_device = {
+	.name = "msm_rtb",
+	.id   = -1,
+	.dev  = {
+		 .platform_data = &msm7627a_rtb_pdata,
+	},
+};
+#endif
+
 #define GPIO_VREG_INIT(_id, _reg_name, _gpio_label, _gpio, _active_low) \
 	[GPIO_VREG_ID_##_id] = { \
 		.init_data = { \
@@ -702,10 +784,14 @@ static struct platform_device *common_devices[] __initdata = {
 	&msm_batt_device,
 	&msm_device_adspdec,
 	&msm_device_snd,
+	&msm_device_cad,
 	&asoc_msm_pcm,
 	&asoc_msm_dai0,
 	&asoc_msm_dai1,
 	&msm_adc_device,
+#ifdef CONFIG_MSM_RTB
+	&msm7627a_rtb_device,
+#endif
 #ifdef CONFIG_ION_MSM
 	&ion_dev,
 #endif
@@ -759,6 +845,17 @@ static int __init pmem_audio_size_setup(char *p)
 }
 early_param("pmem_audio_size", pmem_audio_size_setup);
 
+static void fix_sizes(void)
+{
+	if (get_ddr_size() > SZ_512M)
+		pmem_adsp_size = CAMERA_ZSL_SIZE;
+#ifdef CONFIG_ION_MSM
+	msm_ion_camera_size = pmem_adsp_size;
+	msm_ion_audio_size = (MSM_PMEM_AUDIO_SIZE + PMEM_KERNEL_EBI1_SIZE);
+	msm_ion_sf_size = pmem_mdp_size;
+#endif
+}
+
 #ifdef CONFIG_ION_MSM
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 static struct ion_co_heap_pdata co_ion_pdata = {
@@ -771,10 +868,7 @@ static struct ion_co_heap_pdata co_ion_pdata = {
  * These heaps are listed in the order they will be allocated.
  * Don't swap the order unless you know what you are doing!
  */
-static struct ion_platform_data ion_pdata = {
-	.nr = MSM_ION_HEAP_NUM,
-	.has_outer_cache = 1,
-	.heaps = {
+struct ion_platform_heap qrd7627a_heaps[] = {
 		{
 			.id	= ION_SYSTEM_HEAP_ID,
 			.type	= ION_HEAP_TYPE_SYSTEM,
@@ -786,7 +880,6 @@ static struct ion_platform_data ion_pdata = {
 			.id	= ION_CAMERA_HEAP_ID,
 			.type	= ION_HEAP_TYPE_CARVEOUT,
 			.name	= ION_CAMERA_HEAP_NAME,
-			.size	= MSM_ION_CAMERA_SIZE,
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = (void *)&co_ion_pdata,
 		},
@@ -795,7 +888,6 @@ static struct ion_platform_data ion_pdata = {
 			.id	= ION_AUDIO_HEAP_ID,
 			.type	= ION_HEAP_TYPE_CARVEOUT,
 			.name	= ION_AUDIO_HEAP_NAME,
-			.size	= MSM_ION_AUDIO_SIZE,
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = (void *)&co_ion_pdata,
 		},
@@ -804,12 +896,16 @@ static struct ion_platform_data ion_pdata = {
 			.id	= ION_SF_HEAP_ID,
 			.type	= ION_HEAP_TYPE_CARVEOUT,
 			.name	= ION_SF_HEAP_NAME,
-			.size	= MSM_ION_SF_SIZE,
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = (void *)&co_ion_pdata,
 		},
 #endif
-	}
+};
+
+static struct ion_platform_data ion_pdata = {
+	.nr = MSM_ION_HEAP_NUM,
+	.has_outer_cache = 1,
+	.heaps = qrd7627a_heaps,
 };
 
 static struct platform_device ion_dev = {
@@ -829,6 +925,17 @@ static struct memtype_reserve msm7627a_reserve_table[] __initdata = {
 		.flags	=	MEMTYPE_FLAGS_1M_ALIGN,
 	},
 };
+
+#ifdef CONFIG_MSM_RTB
+static void __init reserve_rtb_memory(void)
+{
+	msm7627a_reserve_table[MEMTYPE_EBI1].size += msm7627a_rtb_pdata.size;
+}
+#else
+static void __init reserve_rtb_memory(void)
+{
+}
+#endif
 
 #ifdef CONFIG_ANDROID_PMEM
 #ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
@@ -873,20 +980,32 @@ static void __init reserve_pmem_memory(void)
 #endif
 }
 
+static void __init size_ion_devices(void)
+{
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+	ion_pdata.heaps[1].size = msm_ion_camera_size;
+	ion_pdata.heaps[2].size = msm_ion_audio_size;
+	ion_pdata.heaps[3].size = msm_ion_sf_size;
+#endif
+}
+
 static void __init reserve_ion_memory(void)
 {
 #if defined(CONFIG_ION_MSM) && defined(CONFIG_MSM_MULTIMEDIA_USE_ION)
-	msm7627a_reserve_table[MEMTYPE_EBI1].size += MSM_ION_CAMERA_SIZE;
-	msm7627a_reserve_table[MEMTYPE_EBI1].size += MSM_ION_AUDIO_SIZE;
-	msm7627a_reserve_table[MEMTYPE_EBI1].size += MSM_ION_SF_SIZE;
+	msm7627a_reserve_table[MEMTYPE_EBI1].size += msm_ion_camera_size;
+	msm7627a_reserve_table[MEMTYPE_EBI1].size += msm_ion_audio_size;
+	msm7627a_reserve_table[MEMTYPE_EBI1].size += msm_ion_sf_size;
 #endif
 }
 
 static void __init msm7627a_calculate_reserve_sizes(void)
 {
+	fix_sizes();
 	size_pmem_devices();
 	reserve_pmem_memory();
+	size_ion_devices();
 	reserve_ion_memory();
+	reserve_rtb_memory();
 }
 
 static int msm7627a_paddr_to_memtype(unsigned int paddr)
@@ -1040,6 +1159,7 @@ static void __init msm_pm_init(void)
 				ARRAY_SIZE(msm8625_pm_data));
 		BUG_ON(msm_pm_boot_init(&msm_pm_8625_boot_pdata));
 		msm8x25_spm_device_init();
+		msm_pm_register_cpr_ops();
 	}
 }
 

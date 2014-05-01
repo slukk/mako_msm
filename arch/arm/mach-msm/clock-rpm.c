@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,10 +12,9 @@
  */
 
 #include <linux/err.h>
-#include <mach/clk.h>
+#include <mach/clk-provider.h>
 
 #include "rpm_resources.h"
-#include "clock.h"
 #include "clock-rpm.h"
 
 #define __clk_rpmrs_set_rate(r, value, ctx, noirq) \
@@ -64,7 +63,8 @@ static int clk_rpmrs_handoff(struct rpm_clk *r)
 
 	if (!r->branch) {
 		r->last_set_khz = iv.value;
-		r->last_set_sleep_khz = iv.value;
+		if (!r->active_only)
+			r->last_set_sleep_khz = iv.value;
 		r->c.rate = iv.value * r->factor;
 	}
 

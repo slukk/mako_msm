@@ -5,7 +5,7 @@
  * Copyright (C) 2008 by David Brownell
  * Copyright (C) 2008 by Nokia Corporation
  * Copyright (C) 2009 by Samsung Electronics
- * Copyright (c) 2011 Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2011 The Linux Foundation. All rights reserved.
  * Author: Michal Nazarewicz (mina86@mina86.com)
  *
  * This software is distributed under the terms of the GNU General
@@ -18,7 +18,6 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/device.h>
-#include <linux/usb/android_composite.h>
 #include <mach/usb_gadget_xport.h>
 
 #include "u_serial.h"
@@ -986,7 +985,7 @@ int acm_bind_config(struct usb_configuration *c, u8 port_num)
 /**
  * acm_init_port - bind a acm_port to its transport
  */
-static int acm_init_port(int port_num, const char *name)
+static int acm_init_port(int port_num, const char *name, const char *port_name)
 {
 	enum transport_type transport;
 
@@ -1015,6 +1014,8 @@ static int acm_init_port(int port_num, const char *name)
 		break;
 	case USB_GADGET_XPORT_HSIC:
 		/*client port number will be updated in acm_port_setup*/
+		ghsic_ctrl_set_port_name(port_name, name);
+		ghsic_data_set_port_name(port_name, name);
 		no_acm_hsic_sports++;
 		break;
 	default:

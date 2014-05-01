@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -60,7 +60,7 @@ struct vfe32_isr_queue_cmd {
 	uint32_t                           vfeInterruptStatus1;
 };
 
-static struct vfe32_cmd_type vfe32_cmd[] = {
+static const struct vfe32_cmd_type vfe32_cmd[] = {
 /* 0*/	{VFE_CMD_DUMMY_0},
 		{VFE_CMD_SET_CLK},
 		{VFE_CMD_RESET},
@@ -802,7 +802,7 @@ static unsigned long vfe32_stats_flush_enqueue(
 		stats_buf = &bufq->bufs[i];
 		rc = vfe32_ctrl->stats_ops.enqueue_buf(
 				vfe32_ctrl->stats_ops.stats_ctrl,
-				&(stats_buf->info), NULL);
+				&(stats_buf->info), NULL, -1);
 		if (rc < 0) {
 			pr_err("%s: dq stats buf (type = %d) err = %d",
 				 __func__, stats_type, rc);
@@ -815,7 +815,7 @@ static unsigned long vfe32_stats_flush_enqueue(
 
 static unsigned long vfe32_stats_unregbuf(
 	struct vfe32_ctrl_type *vfe32_ctrl,
-	struct msm_stats_reqbuf *req_buf)
+	struct msm_stats_reqbuf *req_buf, int domain_num)
 {
 	int i = 0, rc = 0;
 
@@ -823,7 +823,7 @@ static unsigned long vfe32_stats_unregbuf(
 		rc = vfe32_ctrl->stats_ops.buf_unprepare(
 			vfe32_ctrl->stats_ops.stats_ctrl,
 			req_buf->stats_type, i,
-			vfe32_ctrl->stats_ops.client);
+			vfe32_ctrl->stats_ops.client, domain_num);
 		if (rc < 0) {
 			pr_err("%s: unreg stats buf (type = %d) err = %d",
 				__func__, req_buf->stats_type, rc);
@@ -846,6 +846,7 @@ static int vfe_stats_awb_buf_init(
 		pr_err("%s: dq awb ping buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s AWB PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_AWB_WR_PING_ADDR);
@@ -857,6 +858,7 @@ static int vfe_stats_awb_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s AWB PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_AWB_WR_PONG_ADDR);
@@ -881,6 +883,7 @@ static uint32_t vfe_stats_aec_bg_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s AEC PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_AEC_BG_WR_PING_ADDR);
@@ -892,6 +895,7 @@ static uint32_t vfe_stats_aec_bg_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s AEC PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_AEC_BG_WR_PONG_ADDR);
@@ -924,6 +928,7 @@ static int vfe_stats_af_bf_buf_init(
 		pr_err("%s: dq af ping buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s AF PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_AF_BF_WR_PING_ADDR);
@@ -934,6 +939,7 @@ static int vfe_stats_af_bf_buf_init(
 		pr_err("%s: dq af pong buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s AF PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_AF_BF_WR_PONG_ADDR);
@@ -954,6 +960,7 @@ static uint32_t vfe_stats_bhist_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s HIST PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_SKIN_BHIST_WR_PING_ADDR);
@@ -965,6 +972,7 @@ static uint32_t vfe_stats_bhist_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s HIST PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_SKIN_BHIST_WR_PONG_ADDR);
@@ -986,6 +994,7 @@ static int vfe_stats_ihist_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s IHIST PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_HIST_WR_PING_ADDR);
@@ -997,6 +1006,7 @@ static int vfe_stats_ihist_buf_init(
 			__func__);
 		return -ENOMEM;
 	}
+pr_err("%s IHIST PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_HIST_WR_PONG_ADDR);
@@ -1017,6 +1027,7 @@ static int vfe_stats_rs_buf_init(
 		pr_err("%s: dq rs ping buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s RS PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_RS_WR_PING_ADDR);
@@ -1027,6 +1038,7 @@ static int vfe_stats_rs_buf_init(
 		pr_err("%s: dq rs pong buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s RS PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_RS_WR_PONG_ADDR);
@@ -1045,6 +1057,7 @@ static int vfe_stats_cs_buf_init(
 		pr_err("%s: dq cs ping buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s CS PING ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_CS_WR_PING_ADDR);
@@ -1055,6 +1068,7 @@ static int vfe_stats_cs_buf_init(
 		pr_err("%s: dq cs pong buf from free buf queue", __func__);
 		return -ENOMEM;
 	}
+pr_err("%s CS PONG ADDR %x ", __func__, addr);
 	msm_camera_io_w(addr,
 		vfe32_ctrl->share_ctrl->vfebase +
 		VFE_BUS_STATS_CS_WR_PONG_ADDR);
@@ -1068,7 +1082,7 @@ static void vfe32_start_common(struct vfe32_ctrl_type *vfe32_ctrl)
 		vfe32_ctrl->share_ctrl->current_mode & ~(VFE_OUTPUTS_RDI0|
 			VFE_OUTPUTS_RDI1);
 	vfe32_ctrl->share_ctrl->start_ack_pending = TRUE;
-	CDBG("VFE opertaion mode = 0x%x, output mode = 0x%x\n",
+	pr_info("VFE opertaion mode = 0x%x, output mode = 0x%x\n",
 		vfe32_ctrl->share_ctrl->current_mode,
 		vfe32_ctrl->share_ctrl->outpath.output_mode);
 	if (vfe32_ctrl->share_ctrl->stats_comp)
@@ -3528,7 +3542,6 @@ static void vfe32_process_output_path_irq_0(
 
 	free_buf = vfe32_check_free_buffer(VFE_MSG_OUTPUT_IRQ,
 		VFE_MSG_OUTPUT_PRIMARY, axi_ctrl);
-
 	/* we render frames in the following conditions:
 	1. Continuous mode and the free buffer is avaialable.
 	2. In snapshot shot mode, free buffer is not always available.
@@ -4544,7 +4557,7 @@ int msm_axi_subdev_isr_routine(struct v4l2_subdev *sd,
 
 static long vfe_stats_bufq_sub_ioctl(
 	struct vfe32_ctrl_type *vfe_ctrl,
-	struct msm_vfe_cfg_cmd *cmd, void *ion_client)
+	struct msm_vfe_cfg_cmd *cmd, void *ion_client, int domain_num)
 {
 	long rc = 0;
 	switch (cmd->cmd_type) {
@@ -4593,7 +4606,7 @@ static long vfe_stats_bufq_sub_ioctl(
 	rc = vfe_ctrl->stats_ops.enqueue_buf(
 			&vfe_ctrl->stats_ctrl,
 			(struct msm_stats_buf_info *)cmd->value,
-			vfe_ctrl->stats_ops.client);
+			vfe_ctrl->stats_ops.client, domain_num);
 	break;
 	case VFE_CMD_STATS_FLUSH_BUFQ:
 	{
@@ -4627,7 +4640,7 @@ static long vfe_stats_bufq_sub_ioctl(
 			rc = -EINVAL ;
 			goto end;
 		}
-		rc = vfe32_stats_unregbuf(vfe_ctrl, req_buf);
+		rc = vfe32_stats_unregbuf(vfe_ctrl, req_buf, domain_num);
 	}
 	break;
 	default:
@@ -4680,7 +4693,7 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 	case VFE_CMD_STATS_UNREGBUF:
 		/* for easy porting put in one envelope */
 		rc = vfe_stats_bufq_sub_ioctl(vfe32_ctrl,
-				cmd, vfe_params->data);
+				cmd, vfe_params->data, pmctl->domain_num);
 		return rc;
 	default:
 		if (cmd->cmd_type != CMD_CONFIG_PING_ADDR &&
@@ -4890,6 +4903,21 @@ int msm_axi_subdev_init(struct v4l2_subdev *sd)
 	if (rc < 0)
 		goto clk_enable_failed;
 
+#ifdef CONFIG_MSM_IOMMU
+        rc = iommu_attach_device(mctl->domain, axi_ctrl->iommu_ctx_imgwr);
+        if (rc < 0) {
+                pr_err("%s: imgwr attach failed rc = %d\n", __func__, rc);
+                rc = -ENODEV;
+                goto device_imgwr_attach_failed;
+        }
+        rc = iommu_attach_device(mctl->domain, axi_ctrl->iommu_ctx_misc);
+        if (rc < 0) {
+                pr_err("%s: misc attach failed rc = %d\n", __func__, rc);
+                rc = -ENODEV;
+                goto device_misc_attach_failed;
+        }
+#endif
+
 	msm_camio_bus_scale_cfg(
 		mctl->sdata->pdata->cam_bus_scale_table, S_INIT);
 	msm_camio_bus_scale_cfg(
@@ -4905,6 +4933,15 @@ int msm_axi_subdev_init(struct v4l2_subdev *sd)
 	enable_irq(axi_ctrl->vfeirq->start);
 
 	return rc;
+
+#ifdef CONFIG_MSM_IOMMU
+device_misc_attach_failed:
+        iommu_detach_device(mctl->domain, axi_ctrl->iommu_ctx_imgwr);
+device_imgwr_attach_failed:
+#endif
+        msm_cam_clk_enable(&axi_ctrl->pdev->dev, vfe32_clk_info,
+                        axi_ctrl->vfe_clk, ARRAY_SIZE(vfe32_clk_info), 0);
+
 clk_enable_failed:
 	if (axi_ctrl->fs_vfe)
 		regulator_disable(axi_ctrl->fs_vfe);
@@ -4912,7 +4949,6 @@ fs_failed:
 	iounmap(axi_ctrl->share_ctrl->vfebase);
 	axi_ctrl->share_ctrl->vfebase = NULL;
 remap_failed:
-	disable_irq(axi_ctrl->vfeirq->start);
 mctl_failed:
 	return rc;
 }
@@ -4956,6 +4992,11 @@ void msm_axi_subdev_release(struct v4l2_subdev *sd)
 	CDBG("%s, free_irq\n", __func__);
 	disable_irq(axi_ctrl->vfeirq->start);
 	tasklet_kill(&axi_ctrl->vfe32_tasklet);
+
+#ifdef CONFIG_MSM_IOMMU
+        iommu_detach_device(pmctl->domain, axi_ctrl->iommu_ctx_misc);
+        iommu_detach_device(pmctl->domain, axi_ctrl->iommu_ctx_imgwr);
+#endif
 	msm_cam_clk_enable(&axi_ctrl->pdev->dev, vfe32_clk_info,
 			axi_ctrl->vfe_clk, ARRAY_SIZE(vfe32_clk_info), 0);
 	if (axi_ctrl->fs_vfe)
@@ -6050,6 +6091,20 @@ static int __devinit vfe32_probe(struct platform_device *pdev)
 		goto vfe32_no_resource;
 	}
 
+#ifdef CONFIG_MSM_IOMMU
+        /*get device context for IOMMU*/
+        axi_ctrl->iommu_ctx_imgwr =
+                msm_iommu_get_ctx("vfe_imgwr"); /*re-confirm*/
+        axi_ctrl->iommu_ctx_misc =
+                msm_iommu_get_ctx("vfe_misc"); /*re-confirm*/
+        if (!axi_ctrl->iommu_ctx_imgwr || !axi_ctrl->iommu_ctx_misc) {
+                release_mem_region(axi_ctrl->vfemem->start,
+                        resource_size(axi_ctrl->vfemem));
+                pr_err("%s: No iommu fw context found\n", __func__);
+                rc = -ENODEV;
+                goto vfe32_no_resource;
+        }
+#endif
 	tasklet_init(&axi_ctrl->vfe32_tasklet,
 		axi32_do_tasklet, (unsigned long)axi_ctrl);
 

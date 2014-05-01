@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,6 +11,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/device.h>
 #include <linux/delay.h>
@@ -244,9 +245,7 @@ static void ghsuart_data_write_tomdm(struct work_struct *w)
 		pr_debug("%s: port:%p tom:%lu pno:%d\n", __func__,
 				port, port->to_modem, port->port_num);
 
-		spin_unlock_irqrestore(&port->rx_lock, flags);
 		ret = msm_smux_write(port->ch_id, skb, skb->data, skb->len);
-		spin_lock_irqsave(&port->rx_lock, flags);
 		if (ret < 0) {
 			if (ret == -EAGAIN) {
 				/*flow control*/

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,7 +22,7 @@
 #include <mach/board.h>
 #include <mach/gpiomux.h>
 #include <mach/socinfo.h>
-#include <linux/ion.h>
+#include <linux/msm_ion.h>
 #include <mach/ion.h>
 
 #include "devices.h"
@@ -124,6 +124,15 @@ static struct platform_device msm_fb_device = {
 };
 
 static bool dsi_power_on;
+static struct mipi_dsi_panel_platform_data novatek_pdata;
+static void pm8917_gpio_set_backlight(int bl_level)
+{
+	int gpio24 = PM8917_GPIO_PM_TO_SYS(24);
+	if (bl_level > 0)
+		gpio_set_value_cansleep(gpio24, 1);
+	else
+		gpio_set_value_cansleep(gpio24, 0);
+}
 
 /*
  * TODO: When physical 8930/PM8038 hardware becomes
@@ -135,6 +144,8 @@ static bool dsi_power_on;
 static int mipi_dsi_cdp_panel_power(int on)
 {
 	static struct regulator *reg_l8, *reg_l23, *reg_l2;
+	/* Control backlight GPIO (24) directly when using PM8917 */
+	int gpio24 = PM8917_GPIO_PM_TO_SYS(24);
 	int rc;
 
 	pr_debug("%s: state : %d\n", __func__, on);
@@ -190,15 +201,27 @@ static int mipi_dsi_cdp_panel_power(int on)
 				 rc);
 			gpio_free(DISP_3D_2D_MODE);
 			return -ENODEV;
-			}
+		}
 		rc = gpio_direction_output(DISP_3D_2D_MODE, 0);
 		if (rc) {
 			pr_err("gpio_direction_output failed for %d gpio rc=%d\n",
 			DISP_3D_2D_MODE, rc);
 			return -ENODEV;
+		}
+		if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917) {
+			rc = gpio_request(gpio24, "disp_bl");
+			if (rc) {
+				pr_err("request for gpio 24 failed, rc=%d\n",
+					rc);
+				return -ENODEV;
 			}
+			gpio_set_value_cansleep(gpio24, 0);
+			novatek_pdata.gpio_set_backlight =
+				pm8917_gpio_set_backlight;
+		}
 		dsi_power_on = true;
 	}
+
 	if (on) {
 		rc = regulator_set_optimum_mode(reg_l8, 100000);
 		if (rc < 0) {
@@ -416,10 +439,13 @@ static struct msm_bus_scale_pdata mdp_bus_scale_pdata = {
 static struct msm_panel_common_pdata mdp_pdata = {
 	.gpio = MDP_VSYNC_GPIO,
 	.mdp_max_clk = 200000000,
+	.mdp_max_bw = 2000000000,
+	.mdp_bw_ab_factor = 115,
+	.mdp_bw_ib_factor = 125,
 #ifdef CONFIG_MSM_BUS_SCALING
 	.mdp_bus_scale_table = &mdp_bus_scale_pdata,
 #endif
-	.mdp_rev = MDP_REV_42,
+	.mdp_rev = MDP_REV_43,
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 	.mem_hid = BIT(ION_CP_MM_HEAP_ID),
 #else

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -422,7 +422,8 @@ static int msm_mctl_cmd(struct msm_cam_media_controller *p_mctl,
 			rc = v4l2_subdev_call(p_mctl->axi_sdev, core, ioctl,
 				VIDIOC_MSM_AXI_CFG, (void __user *)arg);
 		else
-			rc = p_mctl->isp_sdev->isp_config(p_mctl, cmd, arg);
+			if ((p_mctl) && (p_mctl->isp_sdev) && (p_mctl->isp_sdev->isp_config))
+				rc = p_mctl->isp_sdev->isp_config(p_mctl, cmd, arg);
 		break;
 	case MSM_CAM_IOCTL_ISPIF_IO_CFG:
 		rc = v4l2_subdev_call(p_mctl->ispif_sdev,
@@ -432,7 +433,8 @@ static int msm_mctl_cmd(struct msm_cam_media_controller *p_mctl,
 		/* ISP config*/
 		D("%s:%d: go to default. Calling msm_isp_config\n",
 			__func__, __LINE__);
-		rc = p_mctl->isp_sdev->isp_config(p_mctl, cmd, arg);
+		if ((p_mctl) && (p_mctl->isp_sdev) && (p_mctl->isp_sdev->isp_config))
+			rc = p_mctl->isp_sdev->isp_config(p_mctl, cmd, arg);
 		break;
 	}
 	D("%s: !!! cmd = %d, rc = %d\n",
@@ -776,19 +778,21 @@ static int msm_mctl_dev_open(struct file *f)
 	}
 	/* if no instance is available, return error */
 	if (i == MSM_DEV_INST_MAX) {
-		mutex_unlock(&pcam->mctl_node.dev_lock);
-		return rc;
+		pr_err("%s: no instance is available\n", __func__);
+		goto err_inst;
 	}
 	pcam_inst = kzalloc(sizeof(struct msm_cam_v4l2_dev_inst), GFP_KERNEL);
 	if (!pcam_inst) {
-		mutex_unlock(&pcam->mctl_node.dev_lock);
-		return rc;
+		pr_err("%s: out of memory\n", __func__);
+		rc = -ENOMEM;
+		goto err_inst;
 	}
 
+	mutex_init(&pcam_inst->inst_lock);
+	mutex_lock(&pcam_inst->inst_lock);
 	pcam_inst->sensor_pxlcode = pcam->usr_fmts[0].pxlcode;
 	pcam_inst->my_index = i;
 	pcam_inst->pcam = pcam;
-	mutex_init(&pcam_inst->inst_lock);
 	pcam->mctl_node.dev_inst[i] = pcam_inst;
 
 	D("%s pcam_inst %p my_index = %d\n", __func__,
@@ -797,14 +801,13 @@ static int msm_mctl_dev_open(struct file *f)
 		&pcam->mctl_node.active);
 	if (rc < 0) {
 		pr_err("%s: mctl session open failed %d", __func__, rc);
-		mutex_unlock(&pcam->mctl_node.dev_lock);
-		return rc;
+		goto err_session;
 	}
 
 	pmctl = msm_cam_server_get_mctl(pcam->mctl_handle);
 	if (!pmctl) {
 		pr_err("%s mctl NULL!\n", __func__);
-		return rc;
+		goto err_mctl;
 	}
 
 	D("%s active %d\n", __func__, pcam->mctl_node.active);
@@ -812,6 +815,7 @@ static int msm_mctl_dev_open(struct file *f)
 			pcam->mctl_node.pvdev);
 
 	pcam_inst->vbqueue_initialized = 0;
+	mutex_unlock(&pcam_inst->inst_lock);
 	kref_get(&pmctl->refcount);
 	f->private_data = &pcam_inst->eventHandle;
 
@@ -821,6 +825,16 @@ static int msm_mctl_dev_open(struct file *f)
 	pcam->mctl_node.use_count++;
 	mutex_unlock(&pcam->mctl_node.dev_lock);
 	D("%s : X ", __func__);
+	return rc;
+
+err_mctl:
+	msm_cam_server_close_mctl_session(pcam);
+err_session:
+	mutex_unlock(&pcam_inst->inst_lock);
+	mutex_destroy(&pcam_inst->inst_lock);
+	kfree(pcam_inst);
+err_inst:
+	mutex_unlock(&pcam->mctl_node.dev_lock);
 	return rc;
 }
 
