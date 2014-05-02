@@ -21,7 +21,7 @@
 #include <linux/tick.h>
 #include <linux/ktime.h>
 
-#include "../gpu/msm2/kgsl.h"
+#include "../gpu/msm/kgsl.h"
 
 #define TRANSITION_LATENCY_LIMIT	(10 * 1000 * 1000)
 #define SAMPLE_RATE			(40009)
